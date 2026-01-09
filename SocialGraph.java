@@ -1,164 +1,196 @@
-// SocialGraph.java
-// This class is like the whole social network.
-// It keeps track of users and their friendships (with weights for how close they are).
-import java.util.*;
-
-public class SocialGraph {
-    // Maps user IDs to User objects.
-    private HashMap<String, User> users;
-    // Maps user IDs to their friends (another map of friend ID to weight).
-    private HashMap<String, HashMap<String, Double>> adj;
-
-    // Constructor: Sets up empty maps for users and friendships.
-    public SocialGraph() {
-        users = new HashMap<>();
-        adj = new HashMap<>();
+public class SocialGraph implements SocialGraphInterface {
+    private ArrayBasedList users = new ArrayBasedList();           // User objects
+    private ArrayBasedList adjacency = new ArrayBasedList();       // Parallel adj lists
+    
+    public SocialGraph() {}
+    
+    private int findUserIndex(String userId) {
+        for (int i = 1; i <= users.size(); i++) {
+            if (((User) users.get(i)).getId().equals(userId)) return i;
+        }
+        return -1;
     }
-
-    // Adds a new user to the network.
-    // Checks if user is valid and not already added.
-    // Also adds an empty friend list for them.
+    
+    @Override
     public void addUser(User u) {
-        if (u != null && !users.containsKey(u.getId())) {
-            users.put(u.getId(), u);
-            adj.put(u.getId(), new HashMap<>());
-        }
+        if (u == null || findUserIndex(u.getId()) != -1) return;
+        users.add(users.size() + 1, u);
+        ArrayBasedList emptyAdj = new ArrayBasedList();
+        adjacency.add(adjacency.size() + 1, emptyAdj);
     }
-
-    // Adds a friendship between two users with a weight (like how much they interact).
-    // Checks if both exist, not the same person, and no existing friendship.
-    // Adds both ways since friendships are mutual.
-    public void addFriendship(String u1, String u2, double weight) {
-        if (users.containsKey(u1) && users.containsKey(u2) && !u1.equals(u2) && !adj.get(u1).containsKey(u2)) {
-            adj.get(u1).put(u2, weight);
-            adj.get(u2).put(u1, weight);
-        }
+    
+    @Override
+    public void addFriendship(User u1, User u2, double weight) {
+        int i1 = findUserIndex(u1.getId()), i2 = findUserIndex(u2.getId());
+        if (i1 == -1) { addUser(u1); i1 = findUserIndex(u1.getId()); }
+        if (i2 == -1) { addUser(u2); i2 = findUserIndex(u2.getId()); }
+        if (i1 == i2 || weight <= 0 || isDirectFriend(i1, i2)) return;
+        
+        ArrayBasedList adj1 = (ArrayBasedList) adjacency.get(i1);
+        ArrayBasedList adj2 = (ArrayBasedList) adjacency.get(i2);
+        adj1.add(adj1.size() + 1, new FriendPair(i2, weight));
+        adj2.add(adj2.size() + 1, new FriendPair(i1, weight));
     }
-
-    // Removes a friendship between two users.
-    // Checks if both exist, then removes from both sides.
-    public void removeFriendship(String u1, String u2) {
-        if (users.containsKey(u1) && users.containsKey(u2)) {
-            adj.get(u1).remove(u2);
-            adj.get(u2).remove(u1);
-        }
+    
+    @Override
+    public void removeFriendship(User u1, User u2) {
+        int i1 = findUserIndex(u1.getId()), i2 = findUserIndex(u2.getId());
+        if (i1 == -1 || i2 == -1) return;
+        removeFriendPair(i1, i2);
+        removeFriendPair(i2, i1);
     }
-
-    // Gets all friends of a user.
-    // Returns the set of friend IDs.
-    // If no friends, returns empty set.
-    public Set<String> getFriends(String u) {
-        if (adj.containsKey(u)) {
-            return adj.get(u).keySet();
+    
+    @Override
+    public ArrayBasedList getFriends(User u) {
+        int i = findUserIndex(u.getId());
+        if (i == -1) return new ArrayBasedList();
+        
+        ArrayBasedList adj = (ArrayBasedList) adjacency.get(i);
+        ArrayBasedList friends = new ArrayBasedList();
+        for (int j = 1; j <= adj.size(); j++) {
+            FriendPair pair = (FriendPair) adj.get(j);
+            friends.add(friends.size() + 1, users.get(pair.friendIndex));
         }
-        return new HashSet<>();
+        return friends;
     }
-
-    // Recommends friends for a user, up to the limit.
-    // Uses BFS to explore friends-of-friends (up to depth 3).
-    // Scores based on shared interests, mutual friends, and average weights.
-    // Sorts and picks top ones.
-    public List<String> recommendFriends(String u, int limit) {
-        if (!users.containsKey(u) || limit <= 0) {
-            return new ArrayList<>();
-        }
-        // Set up for BFS: queue for users to visit, visited to avoid repeats, depths to track distance.
-        int maxDepth = 3;
-        Queue<String> queue = new LinkedList<>();
-        Set<String> visited = new HashSet<>();
-        Map<String, Integer> depthMap = new HashMap<>();
-        queue.add(u);
-        visited.add(u);
-        depthMap.put(u, 0);
-
-        // BFS loop: Start from the user, explore friends, then their friends, up to max depth.
-        while (!queue.isEmpty()) {
-            String current = queue.poll();
-            int depth = depthMap.get(current);
-            if (depth >= maxDepth) continue;
-            for (String friend : getFriends(current)) {
-                if (!visited.contains(friend)) {
-                    visited.add(friend);
-                    depthMap.put(friend, depth + 1);
-                    queue.add(friend);
+    
+    @Override
+    public ArrayBasedList recommendFriends(User u, int limit) {
+        int uidx = findUserIndex(u.getId());
+        if (uidx == -1) return new ArrayBasedList();
+        
+        QueueReferenceBased q = new QueueReferenceBased();
+        ArrayBasedList visited = new ArrayBasedList();
+        ArrayBasedList distances = new ArrayBasedList();
+        ArrayBasedList candidates = new ArrayBasedList();
+        
+        // BFS setup
+        visited.add(1, uidx);
+        distances.add(1, 0);
+        q.enqueue(uidx);
+        
+        while (!q.isEmpty()) {
+            int vidx = (Integer) q.dequeue();
+            int vdist = (Integer) indexToDistance(distances, visited, vidx);
+            if (vdist > 3) continue;
+            
+            ArrayBasedList adj = (ArrayBasedList) adjacency.get(vidx);
+            for (int j = 1; j <= adj.size(); j++) {
+                FriendPair pair = (FriendPair) adj.get(j);
+                int widx = pair.friendIndex;
+                
+                if (!contains(visited, widx)) {
+                    visited.add(visited.size() + 1, widx);
+                    distances.add(distances.size() + 1, vdist + 1);
+                    q.enqueue(widx);
+                }
+                
+                if (widx != uidx && !isDirectFriend(uidx, widx)) {
+                    User w = (User) users.get(widx);
+                    double score = calculateScore(u, w);
+                    candidates.add(candidates.size() + 1, new UserScore(w, score));
                 }
             }
         }
-
-        // Collect candidates: Users found in BFS, but not self or direct friends.
-        List<String> candidates = new ArrayList<>();
-        Set<String> directFriends = getFriends(u);
-        for (String v : visited) {
-            if (!v.equals(u) && !directFriends.contains(v) && depthMap.get(v) > 0) {
-                candidates.add(v);
+        
+        // Simple bubble sort (professor-style)
+        bubbleSortScores(candidates);
+        
+        ArrayBasedList top = new ArrayBasedList();
+        int take = Math.min(limit, candidates.size());
+        for (int i = 1; i <= take; i++) {
+            top.add(top.size() + 1, ((UserScore) candidates.get(i)).user);
+        }
+        return top;
+    }
+    
+    // Helper methods
+    private boolean isDirectFriend(int i1, int i2) {
+        ArrayBasedList adj = (ArrayBasedList) adjacency.get(i1);
+        for (int j = 1; j <= adj.size(); j++) {
+            FriendPair pair = (FriendPair) adj.get(j);
+            if (pair.friendIndex == i2) return true;
+        }
+        return false;
+    }
+    
+    private void removeFriendPair(int i1, int i2) {
+        ArrayBasedList adj = (ArrayBasedList) adjacency.get(i1);
+        for (int j = 1; j <= adj.size(); j++) {
+            FriendPair pair = (FriendPair) adj.get(j);
+            if (pair.friendIndex == i2) {
+                adj.remove(j);
+                break;
             }
         }
-
-        // Score each candidate.
-        User user = users.get(u);
-        List<Score> scores = new ArrayList<>();
-        for (String cand : candidates) {
-            User cUser = users.get(cand);
-            // Calculate Jaccard similarity: common interests / total unique interests.
-            InterestSet inter = user.getInterests().intersection(cUser.getInterests());
-            int unionSize = user.getInterests().unionSize(cUser.getInterests());
-            double jacc = unionSize > 0 ? (double) inter.size() / unionSize : 0.0;
-            // Count mutual friends: friends shared between user and candidate.
-            int mutual = 0;
-            for (String f : directFriends) {
-                if (getFriends(cand).contains(f)) {
-                    mutual++;
+    }
+    
+    private double calculateScore(User u1, User u2) {
+        InterestSet common = u1.getInterests().intersection(u2.getInterests());
+        double jaccard = (double) common.size() / u1.getInterests().unionSize(u2.getInterests());
+        int mutual = countMutualFriends(u1.getId(), u2.getId());
+        return 0.6 * jaccard + 0.4 * mutual;
+    }
+    
+    private int countMutualFriends(String id1, String id2) {
+        int i1 = findUserIndex(id1), i2 = findUserIndex(id2);
+        if (i1 == -1 || i2 == -1) return 0;
+        
+        ArrayBasedList adj1 = (ArrayBasedList) adjacency.get(i1);
+        ArrayBasedList adj2 = (ArrayBasedList) adjacency.get(i2);
+        int count = 0;
+        
+        for (int j = 1; j <= adj1.size(); j++) {
+            int f1 = ((FriendPair) adj1.get(j)).friendIndex;
+            for (int k = 1; k <= adj2.size(); k++) {
+                if (((FriendPair) adj2.get(k)).friendIndex == f1) {
+                    count++;
+                    break;
                 }
             }
-            // Average weight: average strength of connections to mutual friends.
-            double avgWeight = 0.0;
-            if (mutual > 0) {
-                double sum = 0.0;
-                for (String f : directFriends) {
-                    if (getFriends(cand).contains(f)) {
-                        sum += adj.get(u).getOrDefault(f, 0.0);
-                    }
+        }
+        return count;
+    }
+    
+    private boolean contains(ArrayBasedList list, int item) {
+        for (int i = 1; i <= list.size(); i++) {
+            if ((Integer) list.get(i) == item) return true;
+        }
+        return false;
+    }
+    
+    private int indexToDistance(ArrayBasedList distances, ArrayBasedList visited, int vidx) {
+        for (int i = 1; i <= visited.size(); i++) {
+            if ((Integer) visited.get(i) == vidx) return (Integer) distances.get(i);
+        }
+        return 0;
+    }
+    
+    private void bubbleSortScores(ArrayBasedList candidates) {
+        for (int i = 1; i <= candidates.size() - 1; i++) {
+            for (int j = 1; j <= candidates.size() - i; j++) {
+                UserScore s1 = (UserScore) candidates.get(j);
+                UserScore s2 = (UserScore) candidates.get(j + 1);
+                if (s1.score < s2.score) {
+                    candidates.remove(j);
+                    candidates.add(j, s2);
+                    candidates.remove(j + 2);
+                    candidates.add(j + 1, s1);
                 }
-                avgWeight = sum / mutual;
             }
-            // Total score: combine similarity, mutuals, and weights.
-            double score = jacc + mutual + avgWeight;
-            scores.add(new Score(cand, score));
-        }
-
-        // Sort scores from highest to lowest.
-        scores.sort((a, b) -> Double.compare(b.score, a.score));
-
-        // Pick top recommendations up to the limit.
-        List<String> result = new ArrayList<>();
-        for (int i = 0; i < Math.min(limit, scores.size()); i++) {
-            result.add(scores.get(i).id);
-        }
-        return result;
-    }
-
-    // Helper class for holding a user ID and their score during sorting.
-    private static class Score {
-        String id;
-        double score;
-        Score(String id, double score) {
-            this.id = id;
-            this.score = score;
         }
     }
+}
 
-    // Gets a user by ID.
-    public User getUser(String id) {
-        return users.get(id);
-    }
+// Helper classes (professor-style)
+class FriendPair {
+    int friendIndex;
+    double weight;
+    FriendPair(int idx, double w) { friendIndex = idx; weight = w; }
+}
 
-    // Checks if two users are friends.
-    public boolean areFriends(String u1, String u2) {
-        return adj.containsKey(u1) && adj.get(u1).containsKey(u2);
-    }
-
-    // Gets the total number of users.
-    public int size() {
-        return users.size();
-    }
+class UserScore {
+    User user;
+    double score;
+    UserScore(User u, double s) { user = u; score = s; }
 }

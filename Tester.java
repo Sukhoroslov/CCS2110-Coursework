@@ -1,88 +1,83 @@
-// Tester.java
-// This class tests the whole system with sample data.
-// It creates users, adds friendships, runs operations, and checks performance.
-import java.util.List;
-import java.util.Random;
-
 public class Tester {
     public static void main(String[] args) {
-        // Create a new social graph.
         SocialGraph graph = new SocialGraph();
-
-        // Set up sample data: 20 users with random interests.
-        int numUsers = 20;
-        Random rand = new Random();
-        String[] interestPool = {"coding", "gaming", "music", "sports", "travel", "reading", "art", "tech", "food", "movies"};
-        for (int i = 1; i <= numUsers; i++) {
-            User u = new User("user" + i);
-            for (int j = 0; j < 4; j++) {
-                // Pick random interests from the pool.
-                u.addInterest(interestPool[rand.nextInt(interestPool.length)]);
+        
+        // Create sample users with interests
+        String[] interests = {"coding", "gaming", "music", "sports", "travel"};
+        User[] users = new User[20];
+        for (int i = 0; i < 20; i++) {
+            users[i] = new User("user" + (i + 1));
+            for (int j = 0; j < 3; j++) {
+                users[i].addInterest(interests[(i + j) % 5]);
             }
-            graph.addUser(u);
+            graph.addUser(users[i]);
         }
-
-        // Add some friendships: each user gets 3 friends in a cycle.
-        for (int i = 1; i <= numUsers; i++) {
-            for (int j = 1; j <= 3; j++) {
-                int friend = (i + j) % numUsers + 1;
-                if (friend != i) {
-                    // Random weight between 1 and 11.
-                    graph.addFriendship("user" + i, "user" + friend, rand.nextDouble() * 10 + 1);
-                }
-            }
+        
+        // Add friendships (cycle + random)
+        for (int i = 0; i < 20; i++) {
+            graph.addFriendship(users[i], users[(i + 1) % 20], 1.0 + i * 0.1);
+            if (i < 15) graph.addFriendship(users[i], users[(i + 3) % 20], 2.0);
         }
-
-        // Test: Show friends of user1.
+        
         System.out.println("Friends of user1:");
-        for (String f : graph.getFriends("user1")) {
-            System.out.println(f);
+        ArrayBasedList friends = graph.getFriends(users[0]);
+        for (int i = 1; i <= friends.size(); i++) {
+            System.out.println(((User) friends.get(i)).getId());
         }
-
-        // Test: Remove a friendship.
-        graph.removeFriendship("user1", "user2");
-        System.out.println("After remove user2:");
-        for (String f : graph.getFriends("user1")) {
-            System.out.println(f);
+        
+        System.out.println("\nRecommendations for user1:");
+        ArrayBasedList recs = graph.recommendFriends(users[0], 5);
+        for (int i = 1; i <= recs.size(); i++) {
+            System.out.println(((User) recs.get(i)).getId());
         }
-
-        // Test: Add an interest and get recommendations.
-        graph.getUser("user1").addInterest("newinterest");
-        System.out.println("Recommendations for user1:");
-        List<String> recs = graph.recommendFriends("user1", 5);
-        for (String r : recs) {
-            System.out.println(r);
-        }
-
-        // Performance test: Create a bigger graph with 1000 users.
-        int largeNum = 1000;
-        SocialGraph largeGraph = new SocialGraph();
-        for (int i = 1; i <= largeNum; i++) {
-            User u = new User("u" + i);
-            for (int j = 0; j < 5; j++) {
-                u.addInterest(interestPool[rand.nextInt(interestPool.length)]);
-            }
-            largeGraph.addUser(u);
-        }
-        for (int i = 1; i <= largeNum; i++) {
-            for (int j = 1; j <= 5; j++) {
-                // Random friends, avoiding self.
-                int friend = rand.nextInt(largeNum) + 1;
-                if (friend != i) {
-                    largeGraph.addFriendship("u" + i, "u" + friend, rand.nextDouble() * 10 + 1);
-                }
-            }
-        }
-
-        // Run recommendation 5 times and average the time.
-        long totalTime = 0;
-        int runs = 5;
-        for (int r = 0; r < runs; r++) {
-            long start = System.nanoTime();
-            largeGraph.recommendFriends("u1", 10);
-            long end = System.nanoTime();
-            totalTime += (end - start);
-        }
-        System.out.println("Average time for recommendFriends on 1000 users: " + (totalTime / runs / 1_000_000) + " ms");
+        
+        // Performance test
+        performanceTest();
     }
+    
+    public static void performanceTest() {
+        System.out.println("\n=== Performance Test ===");
+        long[] times = {0, 0, 0};
+        int[] sizes = {100, 1000, 5000};
+        
+        for (int s = 0; s < 3; s++) {
+            long total = 0;
+            int size = sizes[s];
+            for (int run = 0; run < 5; run++) {
+                SocialGraph g = generateGraph(size);
+                long start = System.nanoTime();
+                g.recommendFriends(g.getUserByIndex(1), 10);
+                total += System.nanoTime() - start;
+            }
+            times[s] = total / 5 / 1_000_000; // ms
+            System.out.printf("%d users: %.2f ms avg\n", size, (double) times[s] / 5);
+        }
+    }
+    
+    // Helpers for perf test
+    private static SocialGraph generateGraph(int size) {
+        SocialGraph g = new SocialGraph();
+        String[] interests = {"coding", "gaming", "music", "sports", "travel", "art", "tech"};
+        for (int i = 1; i <= size; i++) {
+            User u = new User("u" + i);
+            for (int j = 0; j < 4; j++) {
+                u.addInterest(interests[(i + j) % 7]);
+            }
+            g.addUser(u);
+        }
+        for (int i = 1; i <= size; i++) {
+            for (int j = 1; j <= 3; j++) {
+                int friend = (i + j * 17) % size + 1;
+                if (friend != i) g.addFriendship(g.getUserByIndex(i), g.getUserByIndex(friend), 1.5);
+            }
+        }
+        return g;
+    }
+    
+    // Add these methods to SocialGraph class:
+    /*
+    public User getUserByIndex(int i) {
+        return (User) users.get(i);
+    }
+    */
 }
