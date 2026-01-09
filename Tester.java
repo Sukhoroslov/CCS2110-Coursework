@@ -54,30 +54,32 @@ public class Tester {
         }
     }
     
-    // Helpers for perf test
     private static SocialGraph generateGraph(int size) {
         SocialGraph g = new SocialGraph();
         String[] interests = {"coding", "gaming", "music", "sports", "travel", "art", "tech"};
+        
+        // 1. CREATE USERS PROPERLY
         for (int i = 1; i <= size; i++) {
             User u = new User("u" + i);
             for (int j = 0; j < 4; j++) {
                 u.addInterest(interests[(i + j) % 7]);
             }
-            g.addUser(u);
+            g.addUser(u);  // ← CRITICAL: ACTUALLY ADD USER
         }
+        
+        // 2. ADD FRIENDSHIPS PROPERLY  
         for (int i = 1; i <= size; i++) {
             for (int j = 1; j <= 3; j++) {
-                int friend = (i + j * 17) % size + 1;
-                if (friend != i) g.addFriendship(g.getUserByIndex(i), g.getUserByIndex(friend), 1.5);
+                int friendIdx = (i + j * 17) % size + 1;
+                if (friendIdx != i) {
+                    User u1 = g.getUserByIndex(i);
+                    User u2 = g.getUserByIndex(friendIdx);
+                    if (u1 != null && u2 != null) {
+                        g.addFriendship(u1, u2, 1.5);
+                    }
+                }
             }
         }
         return g;
     }
-    
-    // Add these methods to SocialGraph class:
-    /*
-    public User getUserByIndex(int i) {
-        return (User) users.get(i);
-    }
-    */
 }

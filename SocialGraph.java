@@ -93,7 +93,7 @@ public class SocialGraph implements SocialGraphInterface {
             }
         }
         
-        // Simple bubble sort (professor-style)
+        // Simple bubble sort 
         bubbleSortScores(candidates);
         
         ArrayBasedList top = new ArrayBasedList();
@@ -126,12 +126,19 @@ public class SocialGraph implements SocialGraphInterface {
     }
     
     private double calculateScore(User u1, User u2) {
-        InterestSet common = u1.getInterests().intersection(u2.getInterests());
-        double jaccard = (double) common.size() / u1.getInterests().unionSize(u2.getInterests());
+        InterestSet i1 = u1.getInterests();
+        InterestSet i2 = u2.getInterests();
+        InterestSet common = i1.intersection(i2);
+        double jaccard = (double) common.size() / i1.unionSize(i2);
         int mutual = countMutualFriends(u1.getId(), u2.getId());
         return 0.6 * jaccard + 0.4 * mutual;
     }
     
+    public User getUserByIndex(int index) {
+        if (index < 1 || index > users.size()) return null;
+        return (User) users.get(index);
+    }
+
     private int countMutualFriends(String id1, String id2) {
         int i1 = findUserIndex(id1), i2 = findUserIndex(id2);
         if (i1 == -1 || i2 == -1) return 0;
@@ -167,22 +174,21 @@ public class SocialGraph implements SocialGraphInterface {
     }
     
     private void bubbleSortScores(ArrayBasedList candidates) {
-        for (int i = 1; i <= candidates.size() - 1; i++) {
-            for (int j = 1; j <= candidates.size() - i; j++) {
-                UserScore s1 = (UserScore) candidates.get(j);
-                UserScore s2 = (UserScore) candidates.get(j + 1);
-                if (s1.score < s2.score) {
-                    candidates.remove(j);
-                    candidates.add(j, s2);
-                    candidates.remove(j + 2);
-                    candidates.add(j + 1, s1);
-                }
+        for (int i = 2; i <= candidates.size(); i++) {
+            UserScore key = (UserScore) candidates.get(i);
+            int j = i - 1;
+            while (j >= 1 && ((UserScore)candidates.get(j)).score < key.score) {
+                candidates.remove(j + 1);
+                candidates.add(j + 1, candidates.get(j));
+                j--;
             }
+            candidates.remove(j + 1);
+            candidates.add(j + 1, key);
         }
     }
+
 }
 
-// Helper classes (professor-style)
 class FriendPair {
     int friendIndex;
     double weight;
